@@ -1,9 +1,64 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 // ============================================================
 // MATHKIDS — Protótipo Interativo
 // Software Educacional de Matemática para Educação Infantil
 // ============================================================
+
+// --- SONS (Web Audio API, sem arquivos externos) ---
+const audioCtx = typeof window !== "undefined" ? new (window.AudioContext || window.webkitAudioContext)() : null;
+
+function playSound(type) {
+  if (!audioCtx) return;
+  // Resume context on user gesture (mobile)
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  gain.gain.value = 0.15;
+
+  if (type === "correct") {
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(523, audioCtx.currentTime); // C5
+    osc.frequency.setValueAtTime(659, audioCtx.currentTime + 0.1); // E5
+    osc.frequency.setValueAtTime(784, audioCtx.currentTime + 0.2); // G5
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+  } else if (type === "wrong") {
+    osc.type = "square";
+    osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+    osc.frequency.setValueAtTime(150, audioCtx.currentTime + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+  } else if (type === "click") {
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.08);
+  } else if (type === "complete") {
+    osc.type = "sine";
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((n, i) => osc.frequency.setValueAtTime(n, audioCtx.currentTime + i * 0.12));
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.7);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.7);
+  }
+}
+
+// --- LOCALSTORAGE helpers ---
+function loadProgress() {
+  try {
+    const data = JSON.parse(localStorage.getItem("mathkids_progress"));
+    return data || {};
+  } catch { return {}; }
+}
+
+function saveProgress(data) {
+  try {
+    const existing = loadProgress();
+    localStorage.setItem("mathkids_progress", JSON.stringify({ ...existing, ...data }));
+  } catch {}
+}
 
 const COLORS = {
   bg: "#FFF8F0",
@@ -54,6 +109,7 @@ function LoginScreen({ onLogin }) {
   const [animating, setAnimating] = useState(false);
 
   const handleSelect = (avatar) => {
+    playSound("click");
     setSelected(avatar);
     setAnimating(true);
     setTimeout(() => onLogin(avatar), 800);
@@ -90,7 +146,12 @@ function LoginScreen({ onLogin }) {
           </div>
         </div>
       )}
-      <style>{`@keyframes bounceIn { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }`}</style>
+      <style>{`
+        @keyframes bounceIn { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
+        @media (max-width: 480px) {
+          h1 { font-size: 36px !important; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -132,7 +193,7 @@ function MenuScreen({ avatar, onSelect, onLogout, stars }) {
       </div>
 
       {/* Module Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 20, maxWidth: 540, margin: "0 auto", padding: "0 20px 40px" }}>
+      <div className="menu-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 20, maxWidth: 540, margin: "0 auto", padding: "0 20px 40px" }}>
         {modules.map((m) => (
           <button key={m.id} onClick={() => onSelect(m.id)} style={{
             background: COLORS.white, border: `3px solid transparent`, borderRadius: 28, padding: 24,
@@ -148,6 +209,12 @@ function MenuScreen({ avatar, onSelect, onLogout, stars }) {
           </button>
         ))}
       </div>
+      <style>{`
+        @media (max-width: 480px) {
+          .menu-grid { grid-template-columns: 1fr !important; max-width: 320px !important; }
+          .dashboard-summary { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -175,9 +242,11 @@ function CountingModule({ onBack, onEarnStar }) {
 
   const handleTap = () => {
     if (feedback) return;
+    playSound("click");
     const next = count + 1;
     setCount(next);
     if (next === target) {
+      playSound("correct");
       setFeedback("correct");
       setScore((s) => s + 1);
       onEarnStar();
@@ -190,6 +259,7 @@ function CountingModule({ onBack, onEarnStar }) {
 
   const handleCheck = () => {
     if (count === target) {
+      playSound("correct");
       setFeedback("correct");
       setScore((s) => s + 1);
       onEarnStar();
@@ -198,6 +268,7 @@ function CountingModule({ onBack, onEarnStar }) {
         else { setStep((s) => s + 1); newRound(); }
       }, 1500);
     } else {
+      playSound("wrong");
       setFeedback("wrong");
       setTimeout(() => { setFeedback(null); setCount(0); }, 1200);
     }
@@ -274,6 +345,7 @@ function ShapesModule({ onBack, onEarnStar }) {
   const handleSelect = (shape) => {
     if (feedback) return;
     if (shape.name === targetShape.name) {
+      playSound("correct");
       setFeedback("correct");
       setScore((s) => s + 1);
       onEarnStar();
@@ -282,6 +354,7 @@ function ShapesModule({ onBack, onEarnStar }) {
         else { setStep((s) => s + 1); newRound(); }
       }, 1500);
     } else {
+      playSound("wrong");
       setFeedback("wrong");
       setTimeout(() => setFeedback(null), 1000);
     }
@@ -364,6 +437,7 @@ function MathModule({ onBack, onEarnStar }) {
     if (feedback) return;
     setSelected(val);
     if (val === problem.answer) {
+      playSound("correct");
       setFeedback("correct");
       setScore((s) => s + 1);
       onEarnStar();
@@ -372,6 +446,7 @@ function MathModule({ onBack, onEarnStar }) {
         else { setStep((s) => s + 1); newProblem(); }
       }, 1500);
     } else {
+      playSound("wrong");
       setFeedback("wrong");
       setTimeout(() => { setFeedback(null); setSelected(null); }, 1000);
     }
@@ -454,7 +529,7 @@ function DashboardScreen({ onBack, stars }) {
 
       <div style={{ maxWidth: 700, margin: "24px auto", padding: "0 20px" }}>
         {/* Summary Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }}>
+        <div className="dashboard-summary" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }}>
           {[
             { label: "Alunos Ativos", value: "6", icon: "👦", bg: "#E8F0FE" },
             { label: "Média de Progresso", value: "64%", icon: "📈", bg: "#E8F8EE" },
@@ -516,34 +591,71 @@ function ModuleLayout({ title, onBack, step, total, color, children }) {
   );
 }
 
-function FeedbackOverlay({ type }) {
-  const isCorrect = type === "correct";
+function ConfettiEffect() {
+  const colors = ["#FF6B35", "#5B8DEF", "#4ECB71", "#FFD93D", "#FF8FAB", "#B388FF", "#4DD0E1"];
+  const pieces = Array.from({ length: 30 }, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    delay: Math.random() * 0.5,
+    duration: 1 + Math.random() * 1.5,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    size: 6 + Math.random() * 8,
+    rotation: Math.random() * 360,
+  }));
+
   return (
-    <div style={{
-      position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-      background: isCorrect ? "rgba(78, 203, 113, 0.15)" : "rgba(255, 107, 53, 0.12)", zIndex: 100,
-      animation: "fadeIn 0.3s ease",
-    }}>
-      <div style={{
-        background: COLORS.white, borderRadius: 32, padding: "40px 56px", textAlign: "center",
-        boxShadow: `0 12px 40px ${isCorrect ? "rgba(78,203,113,0.25)" : "rgba(255,107,53,0.2)"}`,
-        animation: "bounceIn 0.4s ease",
-      }}>
-        <div style={{ fontSize: 72 }}>{isCorrect ? "🎉" : "🤔"}</div>
-        <p style={{ fontSize: 28, fontWeight: 700, color: isCorrect ? COLORS.success : COLORS.primary, margin: "12px 0 0" }}>
-          {isCorrect ? "Muito bem!" : "Tente de novo!"}
-        </p>
-        {isCorrect && <p style={{ fontSize: 18, color: "#F9A825", margin: "8px 0 0" }}>⭐ +1 estrela!</p>}
-      </div>
+    <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 200, overflow: "hidden" }}>
+      {pieces.map((p) => (
+        <div key={p.id} style={{
+          position: "absolute", top: -20, left: `${p.left}%`,
+          width: p.size, height: p.size * 0.6,
+          background: p.color, borderRadius: 2,
+          transform: `rotate(${p.rotation}deg)`,
+          animation: `confettiFall ${p.duration}s ease-in ${p.delay}s forwards`,
+        }} />
+      ))}
       <style>{`
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes bounceIn { 0% { transform: scale(0.5); opacity: 0; } 60% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes confettiFall {
+          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
       `}</style>
     </div>
   );
 }
 
+function FeedbackOverlay({ type }) {
+  const isCorrect = type === "correct";
+  return (
+    <>
+      {isCorrect && <ConfettiEffect />}
+      <div style={{
+        position: "fixed", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+        background: isCorrect ? "rgba(78, 203, 113, 0.15)" : "rgba(255, 107, 53, 0.12)", zIndex: 100,
+        animation: "fadeIn 0.3s ease",
+      }}>
+        <div style={{
+          background: COLORS.white, borderRadius: 32, padding: "40px 56px", textAlign: "center",
+          boxShadow: `0 12px 40px ${isCorrect ? "rgba(78,203,113,0.25)" : "rgba(255,107,53,0.2)"}`,
+          animation: "bounceIn 0.4s ease",
+        }}>
+          <div style={{ fontSize: 72 }}>{isCorrect ? "🎉" : "🤔"}</div>
+          <p style={{ fontSize: 28, fontWeight: 700, color: isCorrect ? COLORS.success : COLORS.primary, margin: "12px 0 0" }}>
+            {isCorrect ? "Muito bem!" : "Tente de novo!"}
+          </p>
+          {isCorrect && <p style={{ fontSize: 18, color: "#F9A825", margin: "8px 0 0" }}>⭐ +1 estrela!</p>}
+        </div>
+        <style>{`
+          @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes bounceIn { 0% { transform: scale(0.5); opacity: 0; } 60% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
+        `}</style>
+      </div>
+    </>
+  );
+}
+
 function CompletionScreen({ score, total, onBack, title }) {
+  useEffect(() => { playSound("complete"); }, []);
   const pct = Math.round((score / total) * 100);
   const medal = pct === 100 ? "🏆" : pct >= 75 ? "🥇" : pct >= 50 ? "🥈" : "🥉";
   return (
@@ -592,9 +704,19 @@ export default function MathKidsApp() {
   const [avatar, setAvatar] = useState(null);
   const [stars, setStars] = useState(0);
 
-  const handleLogin = (a) => { setAvatar(a); setScreen("menu"); };
+  const handleLogin = (a) => {
+    setAvatar(a);
+    setScreen("menu");
+    // Restaurar estrelas do avatar salvo
+    const progress = loadProgress();
+    if (progress[a.id]) setStars(progress[a.id].stars || 0);
+  };
   const handleLogout = () => { setScreen("login"); setAvatar(null); setStars(0); };
-  const earnStar = () => setStars((s) => s + 1);
+  const earnStar = () => setStars((s) => {
+    const next = s + 1;
+    if (avatar) saveProgress({ [avatar.id]: { stars: next, name: avatar.name } });
+    return next;
+  });
 
   switch (screen) {
     case "login": return <LoginScreen onLogin={handleLogin} />;
